@@ -1,6 +1,8 @@
 import data.set
 import tactic.induction
 import data.equiv.denumerable
+import data.list
+import data.list.sigma
 
 namespace type
 
@@ -125,121 +127,210 @@ def free_vars : term gnd con fv → finset fv
 notation x ` # ` t := x ∉ free_vars t
 abbreviation closed (t : term gnd con fv) := free_vars t = ∅
 
-inductive locally_closed : term gnd con fv → Prop
-| Const : ∀ {c},
---------------------
-locally_closed (|c|)
+inductive locally_closed : finset fv → term gnd con fv → Prop
+| Const : ∀ {Γ c},
+----------------------
+locally_closed Γ (|c|)
 
-| Fvar : ∀ {x},
-------------------
-locally_closed ⌊x⌋
+| Fvar : ∀ {Γ x},
+x ∈ Γ
+----------------------
+→ locally_closed Γ ⌊x⌋
 
-| Unit : 
------------------
-locally_closed ⟪⟫
+| Unit : ∀ {Γ},
+-------------------
+locally_closed Γ ⟪⟫
 
-| Pair : ∀ {t1 t2}, 
-locally_closed t1 → locally_closed t2
--------------------------------------
-→ locally_closed ⟪t1, t2⟫
+| Pair : ∀ {Γ t1 t2}, 
+locally_closed Γ t1 → locally_closed Γ t2
+-----------------------------------------
+→ locally_closed Γ ⟪t1, t2⟫
 
-| Fst : ∀ {t},
-locally_closed t
+| Fst : ∀ {Γ t},
+locally_closed Γ t
+--------------------------
+→ locally_closed Γ (fst t)
+
+| Snd : ∀ {Γ t},
+locally_closed Γ t
 ------------------------
-→ locally_closed (fst t)
+→ locally_closed Γ (snd t)
 
-| Snd : ∀ {t},
-locally_closed t
-------------------------
-→ locally_closed (snd t)
-
-| Abs : ∀ {A t},
-(∀ x # t, locally_closed (open_var x 0 t))
+-- The locally nameless paper says this should be 
+-- ∃ L : finset fv, ∀ x ∉ L, locally_closed (open_var x 0 t)
+-- but in Lean3 constructor arguments can't be inside another inductive type
+-- so I have to use a Γ to track the abstracted variables, which makes the
+-- representation even more complicated... 
+| Abs : ∀ {Γ A t},
+(∀ x ∉ free_vars t ∪ Γ, locally_closed (insert x Γ) (open_var x 0 t))
 -------------------------------------------------------------------------
-→ locally_closed (Λ A. t)
+→ locally_closed Γ (Λ A. t)
 
-| App : ∀ {t1 t2},
-locally_closed t1 → locally_closed t2
+| App : ∀ {Γ t1 t2},
+locally_closed Γ t1 → locally_closed Γ t2
 -------------------------------------
-→ locally_closed (t1 ⬝ t2)
+→ locally_closed Γ (t1 ⬝ t2)
 
-abbreviation lc (t : term gnd con fv) := locally_closed t
+-- def locally_closed' : ℕ → term gnd con fv → Prop
+-- | k |c| := true
+-- | k ⌈i⌉ := i < k
+-- | k ⌊y⌋ := true
+-- | k ⟪⟫  := true
+-- | k ⟪t1, t2⟫ := locally_closed' k t1 ∧ locally_closed' k t2
+-- | k (fst t) := locally_closed' k t
+-- | k (snd t) := locally_closed' k t
+-- | k (Λ A. t) := locally_closed' (k + 1) t
+-- | k (t1 ⬝ t2) := locally_closed' k t1 ∧ locally_closed' k t2
 
-def lc_term (gnd con fv : Type) [fvar fv] [const con gnd]
-:= {t : term gnd con fv // lc t}
-instance : has_lift_t (lc_term gnd con fv) (term gnd con fv)
-:= {lift := subtype.val}
+-- lemma lc'_succ_of_lc' (t : term gnd con fv) (k : ℕ) (h : locally_closed' k t)
+-- : locally_closed' (k + 1) t :=
+-- begin
+--   induction' t generalizing k,
+--   case term.term.Const : x
+--   { triv },
+--   case term.term.Bvar : n
+--   { exact nat.lt_succ_of_lt h },
+--   case term.term.Fvar : x
+--   { triv },
+--   case term.term.Unit
+--   { triv },
+--   case term.term.Pair : t1 t2 ih1 ih2
+--   { exact ⟨ih1 k h.left, ih2 k h.right⟩ },
+--   case term.term.Fst : t ih
+--   { exact ih k h },
+--   case term.term.Snd : t ih
+--   { exact ih k h },
+--   case term.term.Abs : x t ih
+--   { exact ih (k+1) h, },
+--   case term.term.App : t1 t2 ih1 ih2
+--   { exact ⟨ih1 k h.left, ih2 k h.right⟩ }
+-- end
 
-lemma lc_subterms_of_lc_pair {t1 t2 : term gnd con fv} 
-{t : lc_term gnd con fv} (ht : ↑t = ⟪t1, t2⟫) 
-: (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
-  (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
-begin
-  cases' t,
-  simp at ht,
-  subst ht,
-  cases' property,
-  split,
-  exact ⟨⟨t1, property⟩, rfl⟩,
-  exact ⟨⟨t2, property_1⟩, rfl⟩,
-end
+-- lemma lc'_zero_iff_lc' (t : term gnd con fv) 
+-- : locally_closed' 0 t ↔ (∀ k, locally_closed' k t) :=
+-- begin
+--   split, swap,
+--   { intro h, exact h 0 },
+--   intros h k,
+--   induction' k fixing *,
+--   exact h,
+--   exact lc'_succ_of_lc' t k ih,
+-- end
 
-lemma lc_subterms_of_lc_fst {subt : term gnd con fv}
-{t : lc_term gnd con fv} (ht : ↑t = fst subt)
-: ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
-begin
-  cases' t,
-  simp at ht,
-  subst ht,
-  cases' property,
-  exact ⟨⟨t, property⟩, rfl⟩,
-end
+-- theorem lc_iff_lc' (t : term gnd con fv) : locally_closed t ↔ locally_closed' 0 t :=
+-- begin
+--   induction' t fixing *,
+--   case term.term.Const : x
+--   { simp only [locally_closed', iff_true], 
+--     exact locally_closed.Const
+--   },
+--   case term.term.Bvar : n
+--   { simp only [locally_closed', nat.not_lt_zero, iff_false],
+--     intro h,
+--     cases h
+--   },
+--   case term.term.Fvar : x
+--   { simp only [locally_closed', iff_true],
+--     exact locally_closed.Fvar 
+--   },
+--   case term.term.Unit
+--   { simp only [locally_closed', iff_true],
+--     exact locally_closed.Unit
+--   },
+--   case term.term.Pair : t1 t2 ih1 ih2
+--   { simp only [locally_closed'], split,
+--     intro h, cases' h, rw ih1 at h, rw ih2 at h_1, exact ⟨h, h_1⟩,
+--     rintro ⟨h1, h2⟩, rw ←ih1 at h1, rw ←ih2 at h2, exact locally_closed.Pair h1 h2,
+--   },
+--   case term.term.Fst : t ih
+--   { admit },
+--   case term.term.Snd : t ih
+--   { admit },
+--   case term.term.Abs : x t ih
+--   { rw lc'_zero_iff_lc' at ih ⊢, simp only [locally_closed', zero_add], split,
+--     intros h k, cases' h, 
+--   },
+--   case term.term.App : t t_1 ih_t ih_t_1
+--   { admit }
+-- end 
 
-lemma lc_subterms_of_lc_snd {subt : term gnd con fv}
-{t : lc_term gnd con fv} (ht : ↑t = snd subt)
-: ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
-begin
-  cases' t,
-  simp at ht,
-  subst ht,
-  cases' property,
-  exact ⟨⟨t, property⟩, rfl⟩,
-end
+-- abbreviation lc (t : term gnd con fv) := locally_closed (free_vars t) t
 
-lemma lc_subterms_of_lc_abs {subt : term gnd con fv}
-{t : lc_term gnd con fv} {A : type gnd} (ht : ↑t = Λ A. subt)
-: ∀ x # subt, ∃ (lct : lc_term gnd con fv), ↑lct = open_var x 0 subt :=
-begin
-  intros x hx,
-  cases' t,
-  simp at ht,
-  subst ht,
-  cases' property,
-  exact ⟨⟨open_var x 0 t, property x hx⟩, rfl⟩
-end
+-- def lc_term (gnd con fv : Type) [fvar fv] [const con gnd]
+-- := {t : term gnd con fv // lc t}
+-- instance : has_lift_t (lc_term gnd con fv) (term gnd con fv)
+-- := {lift := subtype.val}
 
-lemma lc_subterms_of_lc_app {t1 t2 : term gnd con fv} 
-{t : lc_term gnd con fv} (ht : ↑t = t1 ⬝ t2) 
-: (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
-  (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
-begin
-  cases' t,
-  simp at ht,
-  subst ht,
-  cases' property,
-  split,
-  exact ⟨⟨t1, property⟩, rfl⟩,
-  exact ⟨⟨t2, property_1⟩, rfl⟩,
-end
+-- lemma lc_subterms_of_lc_pair {t1 t2 : term gnd con fv} 
+-- {t : lc_term gnd con fv} (ht : ↑t = ⟪t1, t2⟫) 
+-- : (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
+--   (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
+-- begin
+--   cases' t,
+--   simp at ht,
+--   subst ht,
+--   cases' property,
+--   split,
+--   exact ⟨⟨t1, property⟩, rfl⟩,
+--   exact ⟨⟨t2, property_1⟩, rfl⟩,
+-- end
 
-def body (t : term gnd con fv) := ∀ x # t, lc (open_var x 0 t)
+-- lemma lc_subterms_of_lc_fst {subt : term gnd con fv}
+-- {t : lc_term gnd con fv} (ht : ↑t = fst subt)
+-- : ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
+-- begin
+--   cases' t,
+--   simp at ht,
+--   subst ht,
+--   cases' property,
+--   exact ⟨⟨t, property⟩, rfl⟩,
+-- end
 
-lemma lc_abs_iff_body {t : term gnd con fv} {A : type gnd}
-: lc (Λ A. t) ↔ body t := begin
-  split,
-  { intros h, cases h, exact h_ᾰ },
-  { exact locally_closed.Abs }
-end
+-- lemma lc_subterms_of_lc_snd {subt : term gnd con fv}
+-- {t : lc_term gnd con fv} (ht : ↑t = snd subt)
+-- : ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
+-- begin
+--   cases' t,
+--   simp at ht,
+--   subst ht,
+--   cases' property,
+--   exact ⟨⟨t, property⟩, rfl⟩,
+-- end
+
+-- lemma lc_subterms_of_lc_abs {subt : term gnd con fv}
+-- {t : lc_term gnd con fv} {A : type gnd} (ht : ↑t = Λ A. subt)
+-- : ∀ x # subt, ∃ (lct : lc_term gnd con fv), ↑lct = open_var x 0 subt :=
+-- begin
+--   intros x hx,
+--   cases' t,
+--   simp at ht,
+--   subst ht,
+--   cases' property,
+--   exact ⟨⟨open_var x 0 t, property x hx⟩, rfl⟩
+-- end
+
+-- lemma lc_subterms_of_lc_app {t1 t2 : term gnd con fv} 
+-- {t : lc_term gnd con fv} (ht : ↑t = t1 ⬝ t2) 
+-- : (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
+--   (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
+-- begin
+--   cases' t,
+--   simp at ht,
+--   subst ht,
+--   cases' property,
+--   split,
+--   exact ⟨⟨t1, property⟩, rfl⟩,
+--   exact ⟨⟨t2, property_1⟩, rfl⟩,
+-- end
+
+-- def body (t : term gnd con fv) := ∀ x # t, lc (open_var x 0 t)
+
+-- lemma lc_abs_iff_body {t : term gnd con fv} {A : type gnd}
+-- : lc (Λ A. t) ↔ body t := begin
+--   split,
+--   { intros h, cases h, exact h_ᾰ },
+--   { exact locally_closed.Abs }
+-- end
 
 def subst (u : term gnd con fv) (x : fv)
 : term gnd con fv → term gnd con fv

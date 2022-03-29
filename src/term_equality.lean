@@ -65,8 +65,8 @@ beta_eta_eq Γ t1 t2 A → beta_eta_eq Γ t2 t3 A
 → beta_eta_eq Γ t ⟪⟫ unit
 
 | Cong_lam : ∀ {Γ : env gnd fv} {t t' A B},
-∀ x ∉ free_vars t ∪ Γ.keys.to_finset, 
-  beta_eta_eq (⟨x, A⟩ :: Γ) (open_var x 0 t) (open_var x 0 t') B
+(∀ x ∉ free_vars t ∪ Γ.keys.to_finset, 
+  beta_eta_eq (⟨x, A⟩ :: Γ) (open_var x 0 t) (open_var x 0 t') B)
 ----------------------------------------------------------------
 → beta_eta_eq Γ (Λ A. t) (Λ A. t') (A ⊃ B)
 
@@ -91,13 +91,11 @@ beta_eta_eq Γ t1 t1' A → beta_eta_eq Γ t2 t2' B
 → beta_eta_eq Γ ⟪t1, t2⟫ ⟪t1', t2'⟫ (A ∏ B)
 
 lemma has_type_of_beta_eta_eq {Γ : env gnd fv} 
-{t1 t2 : lc_term gnd con fv} {A : type gnd} 
-(heq : beta_eta_eq con_type Γ t1.val t2.val A)
-: (Γ ⊩ t1.val ∷ A) × (Γ ⊩ t2.val ∷ A) :=
+{t1 t2 : term gnd con fv} {A : type gnd} 
+(heq : beta_eta_eq con_type Γ t1 t2 A)
+: (Γ ⊩ t1 ∷ A) × (Γ ⊩ t2 ∷ A) :=
 begin
-  cases t1,
-  cases t2,
-  induction heq,
+  induction' heq generalizing Γ t1 t2 A,
   case term_equality.beta_eta_eq.Refl : Γ t A h
   { exact ⟨h, h⟩ },
   case term_equality.beta_eta_eq.Symm : Γ t1 t2 A rec ih
@@ -111,71 +109,84 @@ begin
   case term_equality.beta_eta_eq.Beta_prod_snd : Γ t1 t2 A B h1 h2
   { exact ⟨(h1.Pair h2).Snd, h2⟩ },
   case term_equality.beta_eta_eq.Eta_fun : Γ t A B h
-  { exact ⟨h, by {apply has_type.Lam, 
+  { refine ⟨h, _⟩,
+    apply has_type.Abs,
     intros x hx,
     simp only [open_var, open_term, eq_self_iff_true, if_true],
-    apply has_type.App,
-    sorry, sorry, sorry
+    apply has_type.App, rotate 2,
+    exact A,
+    sorry, 
     /-actually, we need weakining... 
-    should be easuer now with locally nameless representation -/ }⟩ },
-  case term_equality.beta_eta_eq.Eta_prod : heq_Γ heq_t heq_A heq_B heq_ᾰ
-  { admit },
-  case term_equality.beta_eta_eq.Eta_unit : heq_Γ heq_t heq_ᾰ
-  { admit },
-  case term_equality.beta_eta_eq.Cong_lam : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_app : heq_Γ heq_t1 heq_t2 heq_t1' heq_t2' heq_A heq_B heq_ᾰ heq_ᾰ_1 heq_ih_ᾰ heq_ih_ᾰ_1
-  { admit },
-  case term_equality.beta_eta_eq.Cong_fst : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_snd : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_pair : heq_Γ heq_t1 heq_t2 heq_t1' heq_t2' heq_A heq_B heq_ᾰ heq_ᾰ_1 heq_ih_ᾰ heq_ih_ᾰ_1
-  { admit }
+    should be easuer now with locally nameless representation -/
+    apply has_type.Fvar,
+    apply ok.Cons (ok_of_has_type h),
+    simp only [not_or_distrib, finset.mem_union, list.mem_to_finset] at hx,
+    exact hx.right
+    },
+  case term_equality.beta_eta_eq.Eta_prod : Γ t A1 A2 h
+  { exact ⟨h, h.Fst.Pair h.Snd⟩ },
+  case term_equality.beta_eta_eq.Eta_unit : Γ t1 h
+  { exact ⟨h, has_type.Unit (ok_of_has_type h)⟩ },
+  case term_equality.beta_eta_eq.Cong_lam : Γ t1 t2 A1 A2 heq ih
+  { let ih1 := λ x hx, (ih x hx).fst,
+    -- this won't work... need hx to be x ∉ t2, not x ∉ t1
+    let ih2 := λ x hx, (ih x hx).snd,
+    exact ⟨has_type.Abs ih1, sorry /-has_type.Abs ih2-/⟩
+  },
+  case term_equality.beta_eta_eq.Cong_app : Γ t1 t2 t1' t2' A1 A2 heq heq_1 ih1 ih2
+  { exact ⟨ih1.fst.App ih2.fst, ih1.snd.App ih2.snd⟩ },
+  case term_equality.beta_eta_eq.Cong_fst : Γ t1 t2 A B heq ih
+  { exact ⟨ih.fst.Fst, ih.snd.Fst⟩ },
+  case term_equality.beta_eta_eq.Cong_snd : Γ t1 t2 A A_1 heq ih
+  { exact ⟨ih.fst.Snd, ih.snd.Snd⟩ },
+  case term_equality.beta_eta_eq.Cong_pair : Γ t1 t2 t1' t2' A1 A2 heq heq_1 ih1 ih2
+  { exact ⟨ih1.fst.Pair ih2.fst, ih1.snd.Pair ih2.snd⟩ }
 end
 
 theorem soundness {M : model gnd con 𝓒} 
-{Γ : env gnd fv} {t1 t2 : lc_term gnd con fv} {A : type gnd}
-(h1 : Γ ⊩ t1.val ∷ A) (h2 : Γ ⊩ t2.val ∷ A)
-(heq : beta_eta_eq con_type Γ t1.val t2.val A)
+{Γ : env gnd fv} {t1 t2 : term gnd con fv} {A : type gnd}
+(h1 : Γ ⊩ t1 ∷ A) (h2 : Γ ⊩ t2 ∷ A)
+(heq : beta_eta_eq con_type Γ t1 t2 A)
 : (M⟦h1⟧) = (M⟦h2⟧) :=
 begin
-  cases t1,
-  cases t2,
-  simp at heq,
-  induction heq,
-  case beta_eta_eq.Refl : Γ t A { rw deriv_unicity ⟨t, t1_property⟩ h1 h2 },
+  induction' heq generalizing Γ t1 t2 A,
+  case beta_eta_eq.Refl : Γ t A { rw deriv_unicity h1 h2 },
   case term_equality.beta_eta_eq.Symm : Γ t2 t1 A rec ih {
-    symmetry, exact ih t2_property h2 t1_property h1, 
+    symmetry, exact ih h2 h1,
   },
   case term_equality.beta_eta_eq.Trans : Γ t1 t2 t3 A rec1 rec2 ih1 ih2 {
-    rename [h2 → h3, t2_property → t3_property],
+    rename [h2 → h3],
     obtain ⟨_, h2⟩ := has_type_of_beta_eta_eq rec1,
-    -- we need to prove reduction preserves local closure here to prove lc t2
-    -- exact trans (ih1 t1_property h1 t2_property h2) (ih2 t2_property h2 t3_property h3)
+    exact trans (ih1 h1 h2) (ih2 h2 h3)
+  },
+  case term_equality.beta_eta_eq.Beta_fun : Γ t1 t2 A A_1 x x_1
+  { admit },
+  case term_equality.beta_eta_eq.Beta_prod_fst : Γ t1 t1_1 A B x x_1
+  { cases' h1, cases h1, rw deriv_unicity h2 h1_ᾰ, simp [eval_has_type] },
+  case term_equality.beta_eta_eq.Beta_prod_snd : Γ t1 t2 A1 A2 x x_1
+  { cases' h1, cases h1, rw deriv_unicity h2 h1_ᾰ_1, simp [eval_has_type] },
+  case term_equality.beta_eta_eq.Eta_fun : Γ t A A_1 x
+  { admit },
+  case term_equality.beta_eta_eq.Eta_prod : Γ t A1 A2 x
+  { cases' h2, cases h2, cases h2_1,
+    have := type_unicity h1 h2_ᾰ, simp at this, subst this,
+    have := type_unicity h1 h2_1_ᾰ, simp at this, subst this,
+    rw deriv_unicity h2_ᾰ h1,
+    rw deriv_unicity h2_1_ᾰ h1,
+    unfold1 eval_has_type,
     sorry
   },
-  case term_equality.beta_eta_eq.Beta_fun : heq_Γ heq_t1 heq_t2 heq_A heq_B heq_ᾰ heq_ᾰ_1
+  case term_equality.beta_eta_eq.Eta_unit : Γ t1 x
   { admit },
-  case term_equality.beta_eta_eq.Beta_prod_fst : heq_Γ heq_t1 heq_t2 heq_A heq_B heq_ᾰ heq_ᾰ_1
+  case term_equality.beta_eta_eq.Cong_lam : Γ t1 t2 A A_1 heq ih
+  { cases h2, cases h1, sorry },
+  case term_equality.beta_eta_eq.Cong_app : Γ t1 t1_1 t2 t2_1 A A_1 heq heq_1 ih_heq ih_heq_1
   { admit },
-  case term_equality.beta_eta_eq.Beta_prod_snd : heq_Γ heq_t1 heq_t2 heq_A heq_B heq_ᾰ heq_ᾰ_1
+  case term_equality.beta_eta_eq.Cong_fst : Γ t1 t2 A B heq ih
   { admit },
-  case term_equality.beta_eta_eq.Eta_fun : heq_Γ heq_t heq_A heq_B heq_ᾰ
+  case term_equality.beta_eta_eq.Cong_snd : Γ t1 t2 A A_1 heq ih
   { admit },
-  case term_equality.beta_eta_eq.Eta_prod : heq_Γ heq_t heq_A heq_B heq_ᾰ
-  { admit },
-  case term_equality.beta_eta_eq.Eta_unit : heq_Γ heq_t heq_ᾰ
-  { admit },
-  case term_equality.beta_eta_eq.Cong_lam : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_app : heq_Γ heq_t1 heq_t2 heq_t1' heq_t2' heq_A heq_B heq_ᾰ heq_ᾰ_1 heq_ih_ᾰ heq_ih_ᾰ_1
-  { admit },
-  case term_equality.beta_eta_eq.Cong_fst : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_snd : heq_Γ heq_t heq_t' heq_A heq_B heq_ᾰ heq_ih
-  { admit },
-  case term_equality.beta_eta_eq.Cong_pair : heq_Γ heq_t1 heq_t2 heq_t1' heq_t2' heq_A heq_B heq_ᾰ heq_ᾰ_1 heq_ih_ᾰ heq_ih_ᾰ_1
+  case term_equality.beta_eta_eq.Cong_pair : Γ t1 t1_1 t2 t2_1 A A_1 heq heq_1 ih_heq ih_heq_1
   { admit }
 end
 
