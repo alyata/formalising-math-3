@@ -1,5 +1,6 @@
 import data.set
 import tactic.induction
+import data.equiv.denumerable
 
 namespace type
 
@@ -31,7 +32,7 @@ abstraction that bound the variable is. For example,
 so we do not need the notion of α-equivalence.
 
 The free variables are represented by names, so we can use any type that
-  1) is infinite (denumerable)
+  1) is infinite
   2) has decidable equality (decidable_eq)
   3) has a function where given a finite set of names, generates a fresh name 
      that does not appear in the set.
@@ -39,11 +40,31 @@ The free variables are represented by names, so we can use any type that
 formalisation.
 -/
 
+class fvar (α : Type) :=
+[hdec : decidable_eq α]
+(fresh : finset α → α)
+(hfresh : ∀ S, fresh S ∉ S)
+
+-- Notice that non-finiteness is implied by having the `fresh` function:
+instance fvar_is_infinite (α : Type) [fvar α]: infinite α := { 
+  not_fintype := begin
+    intro hfin,
+    haveI := hfin,
+    have hfresh := fvar.hfresh (@finset.univ α _),
+    have hnfresh := @finset.mem_univ α _ (fvar.fresh finset.univ),
+    contradiction
+  end
+}
+
+-- a constant has some given fixed type
+class const (α : Type) (gnd : Type) :=
+(type_of : α → type gnd)
+
 @[derive(decidable_eq)]
-inductive term (gnd con fvar : Type) : Type
+inductive term (gnd con fv : Type) : Type
 | Const : con → term
 | Bvar  : ℕ → term
-| Fvar  : fvar → term
+| Fvar  : fv → term
 | Unit  : term
 | Pair  : term → term → term
 | Fst   : term → term
@@ -62,10 +83,11 @@ notation `snd ` t                  := term.Snd t
 notation `Λ ` A `. ` t             := term.Abs A t
 infixl    ` ⬝ `:65                 := term.App
 
-variables {gnd con fvar : Type} [decidable_eq fvar]
+variables {gnd con fv : Type} [fvar fv] [const con gnd]
+instance : decidable_eq fv := fvar.hdec
 
-def open_term (u : term gnd con fvar) 
-: ℕ → term gnd con fvar → term gnd con fvar
+def open_term (u : term gnd con fv) 
+: ℕ → term gnd con fv → term gnd con fv
 | k |c| := |c|
 | k ⌈i⌉ := if k = i then u else ⌈i⌉
 | k ⌊x⌋ := ⌊x⌋
@@ -76,9 +98,9 @@ def open_term (u : term gnd con fvar)
 | k (Λ A. t) := Λ A. (open_term (k+1) t)
 | k (t1 ⬝ t2) := (open_term k t1) ⬝ (open_term k t2)
 
-def open_var (x : fvar) (n : ℕ) (t : term gnd con fvar) := open_term ⌊x⌋ n t
+def open_var (x : fv) (n : ℕ) (t : term gnd con fv) := open_term ⌊x⌋ n t
 
-def close_var (x : fvar) : ℕ → term gnd con fvar → term gnd con fvar 
+def close_var (x : fv) : ℕ → term gnd con fv → term gnd con fv 
 | k |c| := |c|
 | k ⌈i⌉ := ⌈i⌉
 | k ⌊y⌋ := if x = y then ⌈k⌉ else ⌊y⌋
@@ -89,7 +111,7 @@ def close_var (x : fvar) : ℕ → term gnd con fvar → term gnd con fvar
 | k (Λ A. t) := Λ A. (close_var (k+1) t)
 | k (t1 ⬝ t2) := (close_var k t1) ⬝ (close_var k t2)
 
-def free_vars : term gnd con fvar → finset fvar
+def free_vars : term gnd con fv → finset fv
 | |c| := ∅
 | ⌈i⌉ := ∅
 | ⌊y⌋ := {y}
@@ -101,9 +123,9 @@ def free_vars : term gnd con fvar → finset fvar
 | (t1 ⬝ t2) := free_vars t1 ∪ free_vars t2
 
 notation x ` # ` t := x ∉ free_vars t
-abbreviation closed (t : term gnd con fvar) := free_vars t = ∅
+abbreviation closed (t : term gnd con fv) := free_vars t = ∅
 
-inductive locally_closed : term gnd con fvar → Prop
+inductive locally_closed : term gnd con fv → Prop
 | Const : ∀ {c},
 --------------------
 locally_closed (|c|)
@@ -141,17 +163,17 @@ locally_closed t1 → locally_closed t2
 -------------------------------------
 → locally_closed (t1 ⬝ t2)
 
-abbreviation lc (t : term gnd con fvar) := locally_closed t
+abbreviation lc (t : term gnd con fv) := locally_closed t
 
-def lc_term (gnd con fvar : Type) [decidable_eq fvar] 
-:= {t : term gnd con fvar // lc t}
-instance : has_lift_t (lc_term gnd con fvar) (term gnd con fvar)
+def lc_term (gnd con fv : Type) [fvar fv] [const con gnd]
+:= {t : term gnd con fv // lc t}
+instance : has_lift_t (lc_term gnd con fv) (term gnd con fv)
 := {lift := subtype.val}
 
-lemma lc_subterms_of_lc_pair {t1 t2 : term gnd con fvar} 
-{t : lc_term gnd con fvar} (ht : ↑t = ⟪t1, t2⟫) 
-: (∃ (lct1 : lc_term gnd con fvar), ↑lct1 = t1) ∧ 
-  (∃ (lct2 : lc_term gnd con fvar), ↑lct2 = t2) :=
+lemma lc_subterms_of_lc_pair {t1 t2 : term gnd con fv} 
+{t : lc_term gnd con fv} (ht : ↑t = ⟪t1, t2⟫) 
+: (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
+  (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
 begin
   cases' t,
   simp at ht,
@@ -162,9 +184,9 @@ begin
   exact ⟨⟨t2, property_1⟩, rfl⟩,
 end
 
-lemma lc_subterms_of_lc_fst {subt : term gnd con fvar}
-{t : lc_term gnd con fvar} (ht : ↑t = fst subt)
-: ∃ (lct : lc_term gnd con fvar), ↑lct = subt :=
+lemma lc_subterms_of_lc_fst {subt : term gnd con fv}
+{t : lc_term gnd con fv} (ht : ↑t = fst subt)
+: ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
 begin
   cases' t,
   simp at ht,
@@ -173,9 +195,9 @@ begin
   exact ⟨⟨t, property⟩, rfl⟩,
 end
 
-lemma lc_subterms_of_lc_snd {subt : term gnd con fvar}
-{t : lc_term gnd con fvar} (ht : ↑t = snd subt)
-: ∃ (lct : lc_term gnd con fvar), ↑lct = subt :=
+lemma lc_subterms_of_lc_snd {subt : term gnd con fv}
+{t : lc_term gnd con fv} (ht : ↑t = snd subt)
+: ∃ (lct : lc_term gnd con fv), ↑lct = subt :=
 begin
   cases' t,
   simp at ht,
@@ -184,9 +206,9 @@ begin
   exact ⟨⟨t, property⟩, rfl⟩,
 end
 
-lemma lc_subterms_of_lc_abs {subt : term gnd con fvar}
-{t : lc_term gnd con fvar} {A : type gnd} (ht : ↑t = Λ A. subt)
-: ∀ x # subt, ∃ (lct : lc_term gnd con fvar), ↑lct = open_var x 0 subt :=
+lemma lc_subterms_of_lc_abs {subt : term gnd con fv}
+{t : lc_term gnd con fv} {A : type gnd} (ht : ↑t = Λ A. subt)
+: ∀ x # subt, ∃ (lct : lc_term gnd con fv), ↑lct = open_var x 0 subt :=
 begin
   intros x hx,
   cases' t,
@@ -196,10 +218,10 @@ begin
   exact ⟨⟨open_var x 0 t, property x hx⟩, rfl⟩
 end
 
-lemma lc_subterms_of_lc_app {t1 t2 : term gnd con fvar} 
-{t : lc_term gnd con fvar} (ht : ↑t = t1 ⬝ t2) 
-: (∃ (lct1 : lc_term gnd con fvar), ↑lct1 = t1) ∧ 
-  (∃ (lct2 : lc_term gnd con fvar), ↑lct2 = t2) :=
+lemma lc_subterms_of_lc_app {t1 t2 : term gnd con fv} 
+{t : lc_term gnd con fv} (ht : ↑t = t1 ⬝ t2) 
+: (∃ (lct1 : lc_term gnd con fv), ↑lct1 = t1) ∧ 
+  (∃ (lct2 : lc_term gnd con fv), ↑lct2 = t2) :=
 begin
   cases' t,
   simp at ht,
@@ -210,17 +232,17 @@ begin
   exact ⟨⟨t2, property_1⟩, rfl⟩,
 end
 
-def body (t : term gnd con fvar) := ∀ x # t, lc (open_var x 0 t)
+def body (t : term gnd con fv) := ∀ x # t, lc (open_var x 0 t)
 
-lemma lc_abs_iff_body {t : term gnd con fvar} {A : type gnd}
+lemma lc_abs_iff_body {t : term gnd con fv} {A : type gnd}
 : lc (Λ A. t) ↔ body t := begin
   split,
   { intros h, cases h, exact h_ᾰ },
   { exact locally_closed.Abs }
 end
 
-def subst (x : fvar) (u : term gnd con fvar)
-: term gnd con fvar → term gnd con fvar
+def subst (u : term gnd con fv) (x : fv)
+: term gnd con fv → term gnd con fv
 | ⌈i⌉ := ⌈i⌉
 | |c| := |c|
 | ⌊y⌋ := if x = y then u else ⌊y⌋
@@ -230,6 +252,64 @@ def subst (x : fvar) (u : term gnd con fvar)
 | (snd t) := snd (subst t)
 | (Λ A. t) := Λ A. (subst t)
 | (t1 ⬝ t2) := (subst t1) ⬝ (subst t2)
+
+theorem open_term_eq_subst_of_open_var (t u : term gnd con fv) (x : fv) (n : ℕ)
+(hx : x # t) : open_term u n t = subst u x (open_var x n t) :=
+begin
+  induction' t generalizing n,
+  case term.term.Const : c
+  { simp only [open_term, open_var, subst] },
+  case term.term.Bvar : n
+  { simp only [open_term, open_var], 
+    split_ifs,
+    { simp [subst], },
+    { simp [subst], }
+  },
+  case term.term.Fvar : x_1
+  { simp only [open_term, open_var, subst],
+    split_ifs,
+    { simp only [free_vars, finset.mem_singleton] at hx, contradiction },
+    { refl } },
+  case term.term.Unit
+  { simp only [open_term, open_var, subst] },
+  case term.term.Pair : t1 t2 ih1 ih2
+  { simp only [free_vars, not_or_distrib, finset.mem_union] at hx,
+    specialize ih1 n hx.left,
+    specialize ih2 n hx.right,
+    simp only [open_term, open_var, subst],
+    simp only [open_var] at ih1 ih2,
+    exact ⟨ih1, ih2⟩ 
+  },
+  case term.term.Fst : t ih
+  { simp only [free_vars] at hx,
+    specialize ih n hx,
+    simp only [open_term, open_var, subst],
+    simp only [open_var] at ih,
+    exact ih
+  },
+  case term.term.Snd : t ih
+  { simp only [free_vars] at hx,
+    specialize ih n hx,
+    simp only [open_term, open_var, subst],
+    simp only [open_var] at ih,
+    exact ih
+  },
+  case term.term.Abs : A t ih
+  { simp only [free_vars] at hx,
+    specialize ih (n + 1) hx,
+    simp only [open_term, open_var, subst],
+    simp only [open_var] at ih,
+    exact ⟨rfl, ih⟩ 
+  },
+  case term.term.App : t1 t2 ih1 ih2
+  { simp only [free_vars, not_or_distrib, finset.mem_union] at hx,
+    specialize ih1 n hx.left,
+    specialize ih2 n hx.right,
+    simp only [open_term, open_var, subst],
+    simp only [open_var] at ih1 ih2,
+    exact ⟨ih1, ih2⟩
+  }
+end 
 
 end term
 

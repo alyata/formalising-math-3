@@ -10,16 +10,16 @@ namespace term_equality
 open term type typing_relation
 open category_theory category_theory.limits
 
-variables {con gnd fvar : Type} [decidable_eq fvar]
+variables {con gnd fv : Type} [fvar fv] [const con gnd]
 variables {con_type : con → type gnd}
 
 variables {𝓒 : Type} [category 𝓒] 
           [limits.has_finite_products 𝓒] [cartesian_closed 𝓒]
 
 inductive beta_eta_eq (con_type : con → type gnd)
-: env gnd fvar → term gnd con fvar → term gnd con fvar → type gnd → Type
+: env gnd fv → term gnd con fv → term gnd con fv → type gnd → Type
 | Refl : ∀ {Γ t A},
-has_type con_type Γ t A
+(Γ ⊩ t ∷ A)
 -----------------------
 → beta_eta_eq Γ t t A 
 
@@ -33,38 +33,38 @@ beta_eta_eq Γ t1 t2 A → beta_eta_eq Γ t2 t3 A
 ---------------------------------------------
 → beta_eta_eq Γ t1 t3 A
 
-| Beta_fun : ∀ {Γ t1 t2 A B},
-has_type con_type Γ  (Λ A. t1) (A ⊃ B)
-→ has_type con_type Γ t2 A
+| Beta_fun : ∀ {Γ : env gnd fv} {t1 t2 : term gnd con fv} {A B},
+(Γ ⊩ (Λ A. t1) ∷ (A ⊃ B))
+→ (Γ ⊩ t2 ∷ A)
 ----------------------------------------------------------
 → beta_eta_eq Γ ((Λ A. t1) ⬝ t2) (open_term t2 0 t1) B
 
 | Beta_prod_fst : ∀ {Γ t1 t2 A B},
-has_type con_type Γ t1 A → has_type con_type Γ t2 B
+(Γ ⊩ t1 ∷ A) → (Γ ⊩ t2 ∷ B)
 ---------------------------------------------------
 → beta_eta_eq Γ (fst ⟪t1, t2⟫) t1 A
 
 | Beta_prod_snd : ∀ {Γ t1 t2 A B},
-has_type con_type Γ t1 A → has_type con_type Γ t2 B
+(Γ ⊩ t1 ∷ A) → (Γ ⊩ t2 ∷ B)
 ---------------------------------------------------
 → beta_eta_eq Γ (snd ⟪t1, t2⟫) t2 B
 
 | Eta_fun : ∀ {Γ t A B},
-has_type con_type Γ t (A ⊃ B)
+(Γ ⊩ t ∷ (A ⊃ B))
 -----------------------------------------
 → beta_eta_eq Γ t (Λ A. (t ⬝ ⌈0⌉)) (A ⊃ B) 
 
 | Eta_prod : ∀ {Γ t A B},
-has_type con_type Γ t (A ∏ B)
+(Γ ⊩ t ∷ (A ∏ B))
 ----------------------------------------
 → beta_eta_eq Γ t ⟪fst t, snd t⟫ (A ∏ B)  
 
 | Eta_unit : ∀ {Γ t},
-has_type con_type Γ t unit
+(Γ ⊩ t ∷ unit)
 --------------------------
 → beta_eta_eq Γ t ⟪⟫ unit
 
-| Cong_lam : ∀ {Γ : env gnd fvar} {t t' A B},
+| Cong_lam : ∀ {Γ : env gnd fv} {t t' A B},
 ∀ x ∉ free_vars t ∪ Γ.keys.to_finset, 
   beta_eta_eq (⟨x, A⟩ :: Γ) (open_var x 0 t) (open_var x 0 t') B
 ----------------------------------------------------------------
@@ -90,10 +90,13 @@ beta_eta_eq Γ t1 t1' A → beta_eta_eq Γ t2 t2' B
 -----------------------------------------------
 → beta_eta_eq Γ ⟪t1, t2⟫ ⟪t1', t2'⟫ (A ∏ B)
 
-lemma has_type_of_beta_eta_eq {Γ : env gnd fvar} 
-{t1 t2 : term gnd con fvar} {A : type gnd} (heq : beta_eta_eq con_type Γ t1 t2 A)
-: has_type con_type Γ t1 A × has_type con_type Γ t2 A :=
+lemma has_type_of_beta_eta_eq {Γ : env gnd fv} 
+{t1 t2 : lc_term gnd con fv} {A : type gnd} 
+(heq : beta_eta_eq con_type Γ t1.val t2.val A)
+: (Γ ⊩ t1.val ∷ A) × (Γ ⊩ t2.val ∷ A) :=
 begin
+  cases t1,
+  cases t2,
   induction heq,
   case term_equality.beta_eta_eq.Refl : Γ t A h
   { exact ⟨h, h⟩ },
@@ -131,18 +134,17 @@ begin
   { admit }
 end
 
-theorem soundness {M : gnd → 𝓒} {Γ : env gnd fvar} {t1 t2 : lc_term gnd con fvar} 
-{A : type gnd} {con_eval : Π c : con, ⊤_𝓒 ⟶ M⟦con_type c⟧}
-(fresh : finset fvar → fvar) (hfresh : ∀ S, fresh S ∉ S)
-(h1 : has_type con_type Γ ↑t1 A) (h2 : has_type con_type Γ ↑t2 A)
-(heq : beta_eta_eq con_type Γ ↑t1 ↑t2 A)
-: eval_has_type fresh hfresh M con_eval h1 = eval_has_type fresh hfresh M con_eval h2 :=
+theorem soundness {M : model gnd con 𝓒} 
+{Γ : env gnd fv} {t1 t2 : lc_term gnd con fv} {A : type gnd}
+(h1 : Γ ⊩ t1.val ∷ A) (h2 : Γ ⊩ t2.val ∷ A)
+(heq : beta_eta_eq con_type Γ t1.val t2.val A)
+: (M⟦h1⟧) = (M⟦h2⟧) :=
 begin
   cases t1,
   cases t2,
   simp at heq,
   induction heq,
-  case beta_eta_eq.Refl : Γ t A { rw deriv_unicity ⟨t, t1_property⟩ fresh hfresh h1 h2 },
+  case beta_eta_eq.Refl : Γ t A { rw deriv_unicity ⟨t, t1_property⟩ h1 h2 },
   case term_equality.beta_eta_eq.Symm : Γ t2 t1 A rec ih {
     symmetry, exact ih t2_property h2 t1_property h1, 
   },

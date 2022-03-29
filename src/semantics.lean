@@ -6,31 +6,36 @@ import category_theory.limits.shapes.binary_products
 open term type typing_relation
 open category_theory category_theory.limits
 
-variables {con gnd fvar : Type} [decidable_eq fvar] 
-variables {con_type : con → type gnd}
+variables {con gnd fv : Type} [fvar fv] [const con gnd]
 
 variables {𝓒 : Type} [category 𝓒] 
           [limits.has_finite_products 𝓒] [cartesian_closed 𝓒]
 
 -- not sure why this is noncomputable
-noncomputable def eval_type (M : gnd → 𝓒) : type gnd → 𝓒
-| |G| := M G
+noncomputable def eval_type (G : gnd → 𝓒) : type gnd → 𝓒
+| |T| := G T
 | unit := ⊤_𝓒
 | (A ∏ A') := (eval_type A) ⨯ (eval_type A')
 | (A ⊃ A') := (eval_type A) ⟹ (eval_type A')
 
 notation M `⟦` A `⟧` := eval_type M A
 
-noncomputable def eval_env (M : gnd → 𝓒) : env gnd fvar → 𝓒
+noncomputable def eval_env (G : gnd → 𝓒) : env gnd fv → 𝓒
 | [] := ⊤_𝓒
-| (⟨x, A⟩ :: Γ) := eval_type M A ⨯ eval_env Γ
+| (⟨x, A⟩ :: Γ) := eval_type G A ⨯ eval_env Γ
 
 notation M `⟦` Γ `⟧` := eval_env M Γ
 
+structure model (gnd con 𝓒: Type) [const con gnd] 
+[category 𝓒] [limits.has_finite_products 𝓒] [cartesian_closed 𝓒] :=
+(G : gnd → 𝓒)
+(C : Π c: con, ⊤_𝓒 ⟶ G⟦const.type_of c⟧)
+
+variables {Γ : env gnd fv} {t : term gnd con fv} {A : type gnd}
+
 noncomputable def eval_has_type
-(fresh : finset fvar → fvar) (hfresh : ∀ S, fresh S ∉ S)
-(M : gnd → 𝓒) (con_eval : Π c : con, ⊤_𝓒 ⟶ M⟦con_type c⟧)
-: Π {Γ : env gnd fvar} {t A}, (has_type con_type Γ t A) → (M⟦Γ⟧ ⟶ M⟦A⟧) :=
+(M : model gnd con 𝓒)
+: (Γ ⊩ t ∷ A) → (M.G⟦Γ⟧ ⟶ M.G⟦A⟧) :=
 -- | (⟨_, A⟩ :: Γ) ⌊x⌋ _ (has_type.Fvar _) := limits.prod.fst
 -- | (⟨y, A'⟩ :: Γ) ⌊x⌋ A (has_type.Fvar' _ _ rec) :=
 -- by {unfold eval_env, exact (limits.prod.snd ≫ eval_has_type rec)}
@@ -59,7 +64,7 @@ noncomputable def eval_has_type
 begin
   -- the recursion syntax outside tactic mode gives an error,
   -- so I use tactic mode for now
-  intros Γ t A 𝓙,
+  intros 𝓙,
   induction 𝓙,
   case has_type.Fvar : Γ x A {
     -- M⟦Γ⟧ ⨯ M⟦A⟧ -π₂-> M⟦A⟧
@@ -71,12 +76,12 @@ begin
     exact limits.prod.snd ≫ rec_ret,
   },
   case has_type.Const : Γ c {
-    -- M⟦Γ⟧ -⟨⟩-> ⊤ -con_eval-> M⟦con_type c⟧
-    exact terminal.from (M⟦Γ⟧) ≫ con_eval c
+    -- M⟦Γ⟧ -⟨⟩-> ⊤ -M.C-> M⟦con_type c⟧
+    exact terminal.from (M.G⟦Γ⟧) ≫ M.C c
   },
   case has_type.Unit : Γ {
     -- M⟦Γ⟧ -⟨⟩-> ⊤
-    exact terminal.from (M⟦Γ⟧)
+    exact terminal.from (M.G⟦Γ⟧)
   },
   case has_type.Pair : Γ t t' A A' rec rec' rec_ret rec_ret' {
     unfold eval_type,
@@ -91,8 +96,8 @@ begin
     exact rec_ret ≫ limits.prod.snd,
   },
   case has_type.Lam : Γ t A A' rec rec_ret {
-    set x := fresh (free_vars t ∪ (list.keys Γ).to_finset),
-    specialize hfresh (free_vars t ∪ (list.keys Γ).to_finset),
+    set x := fvar.fresh (free_vars t ∪ (list.keys Γ).to_finset),
+    have hfresh := fvar.hfresh (free_vars t ∪ (list.keys Γ).to_finset),
     specialize rec_ret x hfresh,
     unfold eval_env at rec_ret,
     unfold eval_type,
@@ -100,6 +105,8 @@ begin
   },
   case has_type.App : Γ t t' A A' rec rec' rec_ret rec_ret' {
     unfold eval_type at rec_ret,
-    exact prod.lift rec_ret' rec_ret ≫ (exp.ev (M⟦A⟧)).app (M⟦A'⟧)
+    exact prod.lift rec_ret' rec_ret ≫ (exp.ev (M.G⟦A⟧)).app (M.G⟦A'⟧)
   }
 end
+
+notation M `⟦` 𝓙 `⟧` := eval_has_type M 𝓙
