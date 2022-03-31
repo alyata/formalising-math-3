@@ -92,8 +92,8 @@ has_type Γ t (A ⊃ A') → has_type Γ t' A
 
 notation Γ ` ⊩ ` t ` ∷ ` A := has_type Γ t A
 
-variables {Γ : env gnd fv} {t t1 t2 : term gnd con fv} {A A1 A2 B : type gnd}
-          {x : fv}
+variables {Γ : env gnd fv} {t t1 t2 : term gnd con fv} {A A1 A2 B C : type gnd}
+          {x y : fv}
 
 lemma mem_of_has_type_fv (h : Γ ⊩ (⌊x⌋ : term gnd con fv) ∷ A)
 : sigma.mk x A ∈ Γ :=
@@ -172,38 +172,37 @@ end
 theorem type_unicity (h1 : Γ ⊩ t ∷ A1) (h2 : Γ ⊩ t ∷ A2) : A1 = A2 :=
 begin
   have ht := lc_of_has_type h1,
-  with_cases {induction ht generalizing Γ A1 A2; cases h1; cases h2},
+  with_cases {induction' ht generalizing Γ A1 A2 t; cases h1; cases h2},
   case locally_closed.Const { refl },
   case locally_closed.Unit { refl },
   case locally_closed.Pair
-  : _ FV t1 t2 hlc1 hlc2 ih1 ih2 Γ A1 A2 h1t1 h1t2 B1 B2 h2t1 h2t2 {
+  : _ t1 t2 hlc1 hlc2 ih1 ih2 A1 A2 h1t1 h1t2 B1 B2 h2t1 h2t2 {
     simp only,
     split,
     exact ih1 h1t1 h2t1,
     exact ih2 h1t2 h2t2
   },
-  case locally_closed.Fst : _ FV t hlc ih Γ A1 A2 B1 h1 B2 h2 {
+  case locally_closed.Fst : _ A1 A2 t hlc ih B1 h1 B2 h2 {
     specialize ih h1 h2,
     simp only at ih,
     exact ih.left
   },
-  case locally_closed.Snd : _ FV t hlc ih Γ A1 A2 B1 h1 B2 h2 {
+  case locally_closed.Snd : _ A1 A2 t hlc ih B1 h1 B2 h2 {
     specialize ih h1 h2,
     simp only at ih,
     exact ih.right
   },
-  case locally_closed.Abs : _ FV B t hlc ih Γ A1 h1 A2 h2 {
+  case locally_closed.Abs : _ B t hlc ih A1 h1 A2 h2 {
     simp only [eq_self_iff_true, true_and],
-    have hfresh := fvar.hfresh (free_vars t ∪ FV),
-    set x := fvar.fresh (free_vars t ∪ FV),
-    -- how do we track the information that FV ⊇ Γ.keys.to_finset?
-    -- If we can do that then we can specialize h1 and h2 somehow using hfresh.
-    specialize h1 x sorry,
-    specialize h2 x sorry,
-    exact ih x hfresh h1 h2,
+    have hfresh := fvar.hfresh (free_vars t ∪ (list.keys Γ).to_finset),
+    set x := fvar.fresh (free_vars t ∪ (list.keys Γ).to_finset),
+    specialize h1 x hfresh,
+    specialize h2 x hfresh,
+    refine ih x hfresh _ h1 h2,
+    simp, 
   },
   case locally_closed.App 
-  : _ FV t1 t2 hlc1 hlc2 ih1 ih2 Γ A1 A2 B1 h1t2 h1t1 B2 h2t2 h2t1 {
+  : _  A1 A2 t1 t2 hlc1 hlc2 ih1 ih2 B1 h1t2 h1t1 B2 h2t2 h2t1 {
     specialize ih1 h1t1 h2t1,
     simp only at ih1,
     exact ih1.right,
@@ -211,7 +210,7 @@ begin
   case has_type.Fvar has_type.Fvar { refl },
   case has_type.Fvar has_type.Fvar' { contradiction },
   case has_type.Fvar' has_type.Fvar { contradiction },
-  case has_type.Fvar' has_type.Fvar' : _ FV x hx A1 A2 Γ y A' hy hneq h1 _ _ h2 { 
+  case has_type.Fvar' has_type.Fvar' : _ A1 A2 x hx y A' hy hneq h1 _ _ h2 { 
     have hnodup := nodupkeys_of_ok (ok_of_has_type h1),
     exact hnodup.eq_of_mk_mem (mem_of_has_type_fv h1) (mem_of_has_type_fv h2)
   }
@@ -221,66 +220,75 @@ theorem deriv_unicity (h1 h2 : Γ ⊩ t ∷ A) : h1 = h2 :=
 begin
   have ht := lc_of_has_type h1,
   --set FV := (list.keys Γ).to_finset,
-  with_cases {induction ht generalizing Γ A; cases h1; cases h2},
+  with_cases {induction' ht generalizing Γ A t; cases h1; cases h2},
 
-  case locally_closed.Const : _ FV c Γ h1 h2 { rw ok_unicity h1 h2 },
-  case locally_closed.Unit : _ FV Γ h1 h2 { rw ok_unicity h1 h2 },
+  case locally_closed.Const : _ c h1 h2 { rw ok_unicity h1 h2 },
+  case locally_closed.Unit : _ h1 h2 { rw ok_unicity h1 h2 },
   case locally_closed.Pair 
-  : _ FV t1 t2 hlc1 hlc2 ih1 ih2 Γ A B h1t1 h1t2 h2t1 h2t2 {
+  : _ t1 t2 hlc1 hlc2 ih1 ih2 A B h1t1 h1t2 h2t1 h2t2 {
     rw ih1 h1t1 h2t1,
     rw ih2 h1t2 h2t2
   },
-  case locally_closed.Fst : _ FV t hlc ih A Γ B1 h1 B2 h2 {
+  case locally_closed.Fst : _ A t hlc ih B1 h1 B2 h2 {
     have := type_unicity h1 h2,
     simp only [eq_self_iff_true, true_and] at this,
     subst this,
     rw ih h1 h2,
   },
-  case locally_closed.Snd : _ FV t hlc ih A Γ B1 h1 B2 h2 {
+  case locally_closed.Snd : _ A t hlc ih B1 h1 B2 h2 {
     have := type_unicity h1 h2,
     simp only [eq_self_iff_true, and_true] at this,
     subst this,
     rw ih h1 h2,
   },
-  case locally_closed.Abs : _ FV A t hlc ih Γ B h1 h2 {
+  case locally_closed.Abs : _ A t hlc ih B h1 h2 {
+    -- this looks easy now, but actually needed induction', otherwise the ih
+    -- came in the wrong form and couldnt be used because it was not tracking enough
+    -- info about the local closure hlc
     simp only,
     ext x hx,
-    -- need to keep two versions of hx, one as it is (that appears in the goal),
-    -- one simplified to use as lemma
-    have hx_simp := hx,
-    simp only [not_or_distrib, finset.mem_union, list.mem_to_finset] at hx_simp,
-    -- exact ih x hx_simp (h1 x hx) (h2 x hx),
-    sorry
+    refine ih x hx _ (h1 x hx) (h2 x hx),
+    simp,
   },
   case locally_closed.App
-  : _ FV t1 t2 hlc1 hlc2 ih1 ih2 B Γ A1 h1t2 h1t1 A2 h2t2 h2t1 {
+  : _ B t1 t2 hlc1 hlc2 ih1 ih2 A1 h1t2 h1t1 A2 h2t2 h2t1 {
     have := type_unicity h1t2 h2t2,
     subst this,
     rw ih1 h1t1 h2t1,
     rw ih2 h1t2 h2t2,
   },
-  case has_type.Fvar has_type.Fvar : _ FV x hx A Γ h1 h2 { rw ok_unicity h1 h2 },
+  case has_type.Fvar has_type.Fvar : _ A x h1 hx h2 { rw ok_unicity h1 h2 },
   case has_type.Fvar has_type.Fvar' { contradiction },
   case has_type.Fvar' has_type.Fvar { contradiction },
-  case has_type.Fvar' has_type.Fvar' : t FV x hx A1 Γ y A2 hy hneq h1 hy' hneq' h2 {
+  case has_type.Fvar' has_type.Fvar' : A1 x Γ y A2 hy hx hneq h1 hy' hneq' h2 {
     simp only,
     with_cases { induction' Γ fixing *; cases h1; cases h2 },
-    case has_type.Fvar has_type.Fvar : _ _ _ _ h1 h2
+    case has_type.Fvar has_type.Fvar : _ _ _ _ _ h1 h2
     { rw ok_unicity h1 h2 },
     case has_type.Fvar has_type.Fvar'
     { contradiction },
     case has_type.Fvar' has_type.Fvar
     { contradiction },
-    case has_type.Fvar' has_type.Fvar' : Γ ih x' A' hy _ h1x' h1neqx' h1 h2x' h2neqx' h2
+    case has_type.Fvar' has_type.Fvar' 
+    : Γ ih x' A' hy _ hy' h1x' h1neqx' h1 h2x' h2neqx' h2
     { simp only,
       simp only [not_or_distrib, list.keys_cons, list.mem_cons_iff] at hy,
-      exact ih hy.right h1 hy.right h2, 
+      refine ih hy.right _ h1 hy.right h2,
+      simp only [list.keys_cons, list.to_finset_cons, finset.mem_insert, 
+                 list.mem_to_finset] at ⊢ hx,
+      rcases hx with (hx | hx | hx),
+      { left, exact hx }, { contradiction }, {right, exact hx}
     },
   }
 end
 
--- lemma exchange {t : term gnd con fv} ()
+lemma exchange (h : ⟨x, A⟩::⟨y, B⟩::Γ ⊩ t ∷ C) : ⟨y, B⟩::⟨x, A⟩::Γ ⊩ t ∷ C :=
+begin
+  sorry
+  -- no time!
+end
 
+-- I realised (too late) I probably should've followed the 
 lemma weakening (hx : x ∉ free_vars t ∪ Γ.keys.to_finset)
 (h : Γ ⊩ t ∷ A) : (⟨x, B⟩::Γ) ⊩ t ∷ A :=
 begin
@@ -344,7 +352,12 @@ begin
   case typing_relation.has_type.Snd : Γ t A A_1 h ih
   { apply has_type.Snd, exact ih hx },
   case typing_relation.has_type.Abs : Γ t A A_1 h ih
-  { apply has_type.Abs, intros x1 hx1, sorry /-need exchange lemma here -/ },
+  { apply has_type.Abs, intros x1 hx1,
+    /- actually might need to strengthen the goal to
+       (h : Δ ++ Γ ⊩ t ∷ A) : (Δ ++ ⟨x, B⟩::Γ) ⊩ t ∷ A,
+       and maybe need exchange lemma? -/
+    sorry 
+  },
   case typing_relation.has_type.App : Γ t1 t2 A B h1 h2 ih1 ih2
   { simp only [not_or_distrib, list.keys_cons, list.to_finset_cons, 
                finset.union_insert, finset.mem_insert, finset.mem_union,
@@ -408,8 +421,10 @@ begin
   { simp only [subst],
     cases' h1,
     apply has_type.Abs,
-    intros x_1 hx_1,
-    -- specialize ih x_1 _ h2,
+    intros x1 hx1,
+    -- This should be doable in principle, need to show a similar lemma to 
+    -- free_vars_open_term but for free_vars_subst instead.
+    -- also need to show commutativity between subst and open_var...
     sorry
   },
   case term.locally_closed.App : t2l t2r ht2l ht2r ihl ihr
@@ -457,8 +472,11 @@ begin
       simp only [this, finset.insert_eq, list.keys_cons, list.to_finset_cons] at ih,
       rw finset.subset_iff; intros x' hx',
     },
-    any_goals {specialize ih (finset.subset_union_left _ _ hx')}, -- do this in first goal
-    any_goals {specialize ih hx'}, -- do this in second goal
+    -- do this for first goal
+    any_goals {specialize ih (finset.subset_union_left _ _ hx')},
+    -- do this for second goal
+    any_goals {specialize ih hx'},
+    -- and then same steps across both goals again
     all_goals {
       cases finset.mem_union.mp ih,
       { exfalso, rw finset.mem_singleton at h_1, rw h_1 at hx',
