@@ -48,7 +48,7 @@ class fvar (α : Type) :=
 (hfresh : ∀ S, fresh S ∉ S)
 
 -- Notice that non-finiteness is implied by having the `fresh` function:
-instance fvar_is_infinite (α : Type) [fvar α]: infinite α := { 
+instance fvar_is_infinite (α : Type) [fvar α] : infinite α := { 
   not_fintype := begin
     intro hfin,
     haveI := hfin,
@@ -124,10 +124,83 @@ def free_vars : term gnd con fv → finset fv
 | (Λ A. t) := free_vars t
 | (t1 ⬝ t2) := free_vars t1 ∪ free_vars t2
 
+lemma free_vars_open_term (t1 t2 : term gnd con fv) (n : ℕ)
+: free_vars (open_term t2 n t1) = free_vars t1 ∪ free_vars t2 ∨
+  free_vars (open_term t2 n t1) = free_vars t1 := 
+begin
+  induction t1 generalizing n,
+  case term.term.Const : t1 n
+  { right, simp [free_vars, open_term] },
+  case term.term.Bvar : t1 n
+  { simp only [free_vars, open_term, finset.empty_union], split_ifs,
+    { left, refl },
+    { right, unfold free_vars }
+  },
+  case term.term.Fvar : t1 n
+  { right, simp [free_vars, open_term] },
+  case term.term.Unit : n
+  { right, simp [free_vars, open_term] },
+  case term.term.Pair : t1l t1r ihl ihr n
+  { simp only [free_vars, open_term, finset.union_assoc],
+    specialize ihl n, specialize ihr n,
+    with_cases { cases ihl; cases ihr; rw [ihl, ihr] },
+    case or.inl or.inl
+    { left,
+      rw [←finset.union_assoc _ (free_vars t1r) (free_vars t2)],
+      rw [finset.union_assoc _ (free_vars t2) (free_vars t1r)],
+      rw [finset.union_comm (free_vars t2) (free_vars t1r)],
+      simp only [finset.union_assoc, finset.union_right_idem],
+    },
+    case or.inl or.inr
+    { left, ac_refl },
+    case or.inr or.inl
+    { left, ac_refl },
+    case or.inr or.inr
+    { right, ac_refl }     
+  },
+  case term.term.Fst : t1 ih n
+  { simp only [free_vars, open_term], exact ih n },
+  case term.term.Snd : t1 ih n
+  { simp only [free_vars, open_term], exact ih n },
+  case term.term.Abs : A t1 ih n
+  { simp only [free_vars, open_term], exact ih (n + 1) },
+  case term.term.App : t1l t1r ihl ihr n
+  { simp only [free_vars, open_term, finset.union_assoc],
+    specialize ihl n, specialize ihr n,
+    with_cases { cases ihl; cases ihr; rw [ihl, ihr] },
+    case or.inl or.inl
+    { left,
+      rw [←finset.union_assoc _ (free_vars t1r) (free_vars t2)],
+      rw [finset.union_assoc _ (free_vars t2) (free_vars t1r)],
+      rw [finset.union_comm (free_vars t2) (free_vars t1r)],
+      simp only [finset.union_assoc, finset.union_right_idem],
+    },
+    case or.inl or.inr
+    { left, ac_refl },
+    case or.inr or.inl
+    { left, ac_refl },
+    case or.inr or.inr
+    { right, ac_refl }     
+  }
+end
+
+lemma free_vars_open_term' (t1 t2 : term gnd con fv) (n : ℕ)
+: free_vars (open_term t2 n t1) ⊆ free_vars t1 ∪ free_vars t2 :=
+begin
+  cases free_vars_open_term t1 t2 n,
+  { rw h, simp },
+  { rw h, exact (free_vars t1).subset_union_left (free_vars t2) }
+end
+
+lemma free_vars_open_var (t1 : term gnd con fv) (x : fv) (n : ℕ)
+: free_vars (open_var x n t1) = free_vars t1 ∪ {x} ∨
+  free_vars (open_var x n t1) = free_vars t1 :=
+free_vars_open_term t1 ⌊x⌋ n
+
 notation x ` # ` t := x ∉ free_vars t
 abbreviation closed (t : term gnd con fv) := free_vars t = ∅
 
-inductive locally_closed : finset fv → term gnd con fv → Prop
+inductive locally_closed : finset fv → term gnd con fv → Type
 | Const : ∀ {Γ c},
 ----------------------
 locally_closed Γ (|c|)
@@ -159,7 +232,8 @@ locally_closed Γ t
 -- The locally nameless paper says this should be 
 -- ∃ L : finset fv, ∀ x ∉ L, locally_closed (open_var x 0 t)
 -- but in Lean3 constructor arguments can't be inside another inductive type
--- so I have to use a Γ to track the abstracted variables, which makes the
+-- so I have to use a Γ to explicitly track the abstracted variables, which
+-- makes the
 -- representation even more complicated... 
 | Abs : ∀ {Γ A t},
 (∀ x ∉ free_vars t ∪ Γ, locally_closed (insert x Γ) (open_var x 0 t))

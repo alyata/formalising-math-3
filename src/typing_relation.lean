@@ -14,9 +14,18 @@ variables {gnd con fv : Type} [fvar fv] [const con gnd]
 def env (gnd fv : Type) := list (Σ (_ : fv), type gnd)
 instance : has_mem (Σ (_ : fv), type gnd) (env gnd fv) := list.has_mem
 
-inductive ok : env gnd fv → Prop
+inductive ok : env gnd fv → Type
 | Nil  : ok []
 | Cons : ∀ {Γ x A}, ok Γ → x ∉ Γ.keys → ok (⟨x, A⟩ :: Γ)
+
+theorem ok_unicity {Γ : env gnd fv} (h1 h2 : ok Γ) : h1 = h2 :=
+begin
+  with_cases { induction' Γ fixing *; cases h1; cases h2 },
+  case list.nil
+  { refl },
+  case list.cons : Γ ih x A h1 hx1 h2 hx2 
+  { rw ih h1 h2 }
+end
 
 theorem nodupkeys_of_ok {Γ : env gnd fv} (hΓ : ok Γ) : Γ.nodupkeys :=
 begin
@@ -98,13 +107,13 @@ lemma ok_of_has_type (h : Γ ⊩ t ∷ A) : ok Γ :=
 begin
   induction' h,
   case typing_relation.has_type.Fvar
-  { exact h },
+  { exact x_1 },
   case typing_relation.has_type.Fvar' : Γ x y A A' h h_1 h_2 ih
   { apply ok.Cons, exact ih, exact h },
   case typing_relation.has_type.Const : Γ c
-  { exact h },
+  { exact x },
   case typing_relation.has_type.Unit
-  { exact h },
+  { exact x },
   case typing_relation.has_type.Pair : Γ t1 t2 A1 A2 h1 h2 ih1 ih2
   { exact ih1 },
   case typing_relation.has_type.Fst : Γ t_1 A A' h ih
@@ -214,8 +223,8 @@ begin
   --set FV := (list.keys Γ).to_finset,
   with_cases {induction ht generalizing Γ A; cases h1; cases h2},
 
-  case locally_closed.Const { refl },
-  case locally_closed.Unit { refl },
+  case locally_closed.Const : _ FV c Γ h1 h2 { rw ok_unicity h1 h2 },
+  case locally_closed.Unit : _ FV Γ h1 h2 { rw ok_unicity h1 h2 },
   case locally_closed.Pair 
   : _ FV t1 t2 hlc1 hlc2 ih1 ih2 Γ A B h1t1 h1t2 h2t1 h2t2 {
     rw ih1 h1t1 h2t1,
@@ -240,7 +249,7 @@ begin
     -- one simplified to use as lemma
     have hx_simp := hx,
     simp only [not_or_distrib, finset.mem_union, list.mem_to_finset] at hx_simp,
-    --exact ih x hx_simp (h1 x hx) (h2 x hx),
+    -- exact ih x hx_simp (h1 x hx) (h2 x hx),
     sorry
   },
   case locally_closed.App
@@ -250,14 +259,14 @@ begin
     rw ih1 h1t1 h2t1,
     rw ih2 h1t2 h2t2,
   },
-  case has_type.Fvar has_type.Fvar { refl },
+  case has_type.Fvar has_type.Fvar : _ FV x hx A Γ h1 h2 { rw ok_unicity h1 h2 },
   case has_type.Fvar has_type.Fvar' { contradiction },
   case has_type.Fvar' has_type.Fvar { contradiction },
   case has_type.Fvar' has_type.Fvar' : t FV x hx A1 Γ y A2 hy hneq h1 hy' hneq' h2 {
     simp only,
     with_cases { induction' Γ fixing *; cases h1; cases h2 },
-    case has_type.Fvar has_type.Fvar
-    { refl },
+    case has_type.Fvar has_type.Fvar : _ _ _ _ h1 h2
+    { rw ok_unicity h1 h2 },
     case has_type.Fvar has_type.Fvar'
     { contradiction },
     case has_type.Fvar' has_type.Fvar
@@ -270,7 +279,9 @@ begin
   }
 end
 
-lemma weakening {t : term gnd con fv} (hx : x ∉ free_vars t ∪ Γ.keys.to_finset)
+-- lemma exchange {t : term gnd con fv} ()
+
+lemma weakening (hx : x ∉ free_vars t ∪ Γ.keys.to_finset)
 (h : Γ ⊩ t ∷ A) : (⟨x, B⟩::Γ) ⊩ t ∷ A :=
 begin
   induction' h generalizing Γ t A,
@@ -350,36 +361,113 @@ begin
   },
 end
 
-lemma subst_preserves_type (hx : x # t2)
-(h1 : has_type (⟨x, A1⟩::Γ) t2 A2) (h2 : has_type Γ t1 A1)
-: has_type Γ (subst t1 x t2) A2 :=
+lemma subst_preserves_type
+(h1 : (⟨x, A1⟩::Γ ⊩ t2 ∷ A2)) (h2 : (Γ ⊩ t1 ∷ A1))
+: (Γ ⊩ (subst t1 x t2) ∷ A2) :=
 begin
-  induction t2,
-  case term.term.Const : t2
-  { simp [subst] at ⊢,
+  have ht2 := lc_of_has_type h1,
+  induction' ht2 generalizing Γ x t1 t2 A1 A2 h2,
+  case term.locally_closed.Const : t2
+  { simp only [subst],
     cases' h1, 
     apply has_type.Const,
-    cases' h,
-    exact h
+    cases' x_1,
+    exact x_1
   },
-  case term.term.Bvar : t
-  {
+  case term.locally_closed.Fvar : t
+  { simp only [subst],
+    split_ifs,
+    { subst h_1, cases' h1, { exact h2 }, { contradiction } },
+    { cases' h1, { contradiction }, { exact h1 } }
+  },
+  case term.locally_closed.Unit
+  { simp only [subst],
+    cases' h1,
+    apply has_type.Unit,
+    cases' x_1,
+    exact x_1
+  },
+  case term.locally_closed.Pair : t2l t2r ht2l ht2r ihl ihr
+  { simp only [subst],
+    cases' h1,
+    specialize ihl h2 h1,
+    specialize ihr h2 h1_1,
+    exact has_type.Pair ihl ihr
+  },
+  case term.locally_closed.Fst : t2 ht2 ih
+  { simp only [subst],
+    cases' h1,
+    exact has_type.Fst (ih h2 h1)
+  },
+  case term.locally_closed.Snd : t2 ht2 ih
+  { simp only [subst],
+    cases' h1,
+    exact has_type.Snd (ih h2 h1)
+  },
+  case term.locally_closed.Abs : A1 t2 ht2 ih
+  { simp only [subst],
+    cases' h1,
+    apply has_type.Abs,
+    intros x_1 hx_1,
+    -- specialize ih x_1 _ h2,
     sorry
   },
-  case term.term.Fvar : t
-  { admit },
-  case term.term.Unit
-  { admit },
-  case term.term.Pair : t_ᾰ t_ᾰ_1 t_ih_ᾰ t_ih_ᾰ_1
-  { admit },
-  case term.term.Fst : t_ᾰ t_ih
-  { admit },
-  case term.term.Snd : t_ᾰ t_ih
-  { admit },
-  case term.term.Abs : t_ᾰ t_ᾰ_1 t_ih
-  { admit },
-  case term.term.App : t_ᾰ t_ᾰ_1 t_ih_ᾰ t_ih_ᾰ_1
-  { admit }
+  case term.locally_closed.App : t2l t2r ht2l ht2r ihl ihr
+  { simp only [subst],
+    cases' h1,
+    specialize ihl h2 h1,
+    specialize ihr h2 h1_1,
+    exact has_type.App ihl ihr
+  }
+end
+
+lemma free_vars_subset_env (h : Γ ⊩ t ∷ A) : free_vars t ⊆ Γ.keys.to_finset :=
+begin
+  induction' h,
+  case typing_relation.has_type.Fvar : Γ x A x_1
+  { simp only [free_vars, list.keys_cons, list.to_finset_cons, 
+               finset.singleton_subset_iff, finset.mem_insert, eq_self_iff_true,
+               true_or], 
+  },
+  case typing_relation.has_type.Fvar' : Γ x y A A' h h_1 h_2 ih
+  { simp only [free_vars, list.keys_cons, list.to_finset_cons, 
+               finset.singleton_subset_iff, finset.mem_insert, list.mem_to_finset] 
+               at ⊢ ih,
+    right, exact ih
+  },
+  case typing_relation.has_type.Const : Γ c x
+  { simp only [free_vars, finset.empty_subset] },
+  case typing_relation.has_type.Unit : Γ x
+  { simp only [free_vars, finset.empty_subset] },
+  case typing_relation.has_type.Pair : Γ t1 t2 A1 A2 h1 h2 ih1 ih2
+  { simp only [free_vars], exact finset.union_subset ih1 ih2 },
+  case typing_relation.has_type.Fst : Γ t A A' h ih
+  { simp only [free_vars], exact ih },
+  case typing_relation.has_type.Snd : Γ t A A_1 h ih
+  { simp only [free_vars], exact ih },
+  case typing_relation.has_type.Abs : Γ t A A_1 h ih
+  { have hfresh := fvar.hfresh (free_vars t ∪ (list.keys Γ).to_finset),
+    set x := fvar.fresh (free_vars t ∪ (list.keys Γ).to_finset),
+    specialize ih x hfresh,
+    specialize h x hfresh,
+    simp only [free_vars],
+    have := free_vars_open_var t x 0,
+    cases this,
+    all_goals { 
+      simp only [this, finset.insert_eq, list.keys_cons, list.to_finset_cons] at ih,
+      rw finset.subset_iff; intros x' hx',
+    },
+    any_goals {specialize ih (finset.subset_union_left _ _ hx')}, -- do this in first goal
+    any_goals {specialize ih hx'}, -- do this in second goal
+    all_goals {
+      cases finset.mem_union.mp ih,
+      { exfalso, rw finset.mem_singleton at h_1, rw h_1 at hx',
+        rw finset.not_mem_union at hfresh, exact hfresh.left hx' },
+      { exact h_1 },
+    }
+  },
+  case typing_relation.has_type.App : Γ t1 t2 A1 A2 h1 h2 ih1 ih2
+  { simp only [free_vars], exact finset.union_subset ih1 ih2 },
 end
 
 end typing_relation
