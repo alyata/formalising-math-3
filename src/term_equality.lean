@@ -215,7 +215,12 @@ begin
     exact trans (this.uniq (M⟦h1⟧)) (symm (this.uniq (M⟦h2⟧))),
   },
   case term_equality.beta_eta_eq.Cong_lam : Γ t1 t2 A A_1 heq ih
-  { cases h2, cases h1, sorry },
+  { cases h2, cases h1, 
+    simp [eval_has_type],
+    -- this is the same issue as line 140: one hypothesis is asking for free_vars t1
+    -- the other is asking for free_vars t2.
+    sorry
+  },
   case term_equality.beta_eta_eq.Cong_app : Γ t1 t2 t1' t2' A1 A2 heq heq' ih ih'
   { -- Idea: 
     -- the goal is essentially to show 
@@ -235,7 +240,9 @@ begin
     exact ih, 
   },
   case term_equality.beta_eta_eq.Cong_fst : Γ t1 t2 A B heq ih
-  { cases' h1, cases' h2,
+  { -- showing π₁ ∘ M⟦h1⟧ = π₂ ∘ M⟦h2⟧ is the same as showing M⟦h1⟧ = M⟦h2⟧
+    -- by congruence
+    cases' h1, cases' h2,
     obtain ⟨h1', h2'⟩ := has_type_of_beta_eta_eq heq,
     have := type_unicity h1 h1', simp at this, subst this,
     have := type_unicity h2 h2', simp at this, subst this,
@@ -243,7 +250,7 @@ begin
     exact ih h1 h2,
   },
   case term_equality.beta_eta_eq.Cong_snd : Γ t1 t2 A A_1 heq ih
-  {
+  { -- similar to Cong_fst
     cases' h1, cases' h2,
     obtain ⟨h1', h2'⟩ := has_type_of_beta_eta_eq heq,
     have := type_unicity h1 h1', simp at this, subst this,
@@ -252,9 +259,11 @@ begin
     exact ih h1 h2,
   },
   case term_equality.beta_eta_eq.Cong_pair : Γ t1 t2 t1' t2' A1 A2 heq heq' ih ih'
-  { cases' h1, cases h2, --sometimes `cases'` just doesn't work even though `cases` does
+  { -- this uses the universal property of products to decompose equality on
+    -- products, as we did in Cong_app.
+    cases' h1, cases h2, --sometimes `cases'` just doesn't work even though `cases` does
     ext; simp only [eval_has_type, prod.lift_fst, prod.lift_snd], 
-    exact ih h1 h2_ᾰ, 
+    exact ih h1 h2_ᾰ,
     exact ih' h1_1 h2_ᾰ_1
   }
 end

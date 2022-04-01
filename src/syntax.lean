@@ -313,6 +313,6 @@ begin
     simp only [open_var] at ih1 ih2,
     exact ⟨ih1, ih2⟩
   }
-end 
+end
 
 end term
